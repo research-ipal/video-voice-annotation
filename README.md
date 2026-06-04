@@ -11,7 +11,7 @@ A static React + Vite app for surgical video voice annotation. The user selects 
 5. Preview or download each audio chunk.
 6. Review the captured transcript text when the browser supports speech recognition.
 7. Download a JSON metadata file for the current video.
-8. Send transcript JSON to Formspree.
+8. Send transcript JSON to a Formspree endpoint.
 
 Chunks are kept in browser memory for the current session and are separated by video. Closing or refreshing the page clears recorded chunks.
 
