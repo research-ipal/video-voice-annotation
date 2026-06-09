@@ -11,7 +11,7 @@ A static React + Vite app for surgical video voice annotation. The user selects 
 5. Preview or download each audio chunk.
 6. Review the captured transcript text when the browser supports speech recognition.
 7. Download a JSON metadata file for the current video.
-8. Send transcript JSON to a Formspree endpoint.
+8. Send transcript JSON to Formspree.
 
 Chunks are kept in browser memory for the current session and are separated by video. Closing or refreshing the page clears recorded chunks.
 
@@ -38,7 +38,7 @@ This app does not store videos in the GitHub repository. It loads videos directl
 The manifest currently points to:
 
 ```text
-https://huggingface.co/datasets/nvidia/PhysicalAI-Robotics-Open-H-Embodiment/resolve/main/cmr-surgical-60hz-fixed/cholecystectomy/videos/chunk-000/observation.images.endoscope/episode_000000.mp4
+https://huggingface.co/datasets/nvidia/PhysicalAI-Robotics-Open-H-Embodiment/resolve/main/Surgical/cmr_surgical/cholecystectomy/videos/chunk-000/observation.images.endoscope/episode_000000.mp4
 ```
 
 through:
@@ -124,6 +124,8 @@ Enable microphone permission for the site in browser settings and try again. On 
 ### Video Does Not Load
 
 Check the URL in `src/videoManifest.js`, the internet connection, and whether the browser can play the remote MP4 file. Try another video from the selector to isolate one bad URL.
+
+On iPhone Safari, remote MP4 metadata can stay black until a user gesture. If the app shows the Safari fallback, tap **Load video**. If that still fails, tap **Open source MP4** to verify whether Safari can play the Hugging Face file directly.
 
 ### Recording Unsupported
 

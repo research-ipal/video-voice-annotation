@@ -132,11 +132,55 @@ h2 {
 .video-overlay {
   position: absolute;
   inset: 0;
-  display: grid;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  align-items: center;
+  justify-content: center;
   place-items: center;
   background: rgba(14, 17, 20, 0.72);
   color: #ffffff;
   font-weight: 800;
+  text-align: center;
+}
+
+.video-overlay.is-passive {
+  pointer-events: none;
+}
+
+.video-overlay button,
+.video-fallbacks button,
+.video-fallbacks a {
+  display: inline-flex;
+  min-height: 42px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  padding: 0 14px;
+  font-weight: 800;
+  text-decoration: none;
+}
+
+.video-overlay button {
+  background: #ffffff;
+  color: #17212b;
+}
+
+.video-fallbacks {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 10px;
+}
+
+.video-fallbacks button {
+  background: #17212b;
+  color: #ffffff;
+}
+
+.video-fallbacks a {
+  border: 1px solid #ccd4c8;
+  background: #ffffff;
+  color: #17212b;
 }
 
 .video-meta,

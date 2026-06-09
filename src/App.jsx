@@ -96,6 +96,7 @@ function App() {
   const [appError, setAppError] = useState("");
   const [videoError, setVideoError] = useState("");
   const [videoStatus, setVideoStatus] = useState("Loading video...");
+  const [showVideoPrimer, setShowVideoPrimer] = useState(false);
   const [transcriptStatus, setTranscriptStatus] = useState("Transcript idle");
   const [currentTranscript, setCurrentTranscript] = useState("");
   const [formStatus, setFormStatus] = useState("");
@@ -416,6 +417,28 @@ function App() {
     [stopRecording],
   );
 
+  const primeVideoForSafari = useCallback(async () => {
+    const video = videoRef.current;
+    if (!video) {
+      return;
+    }
+
+    setVideoError("");
+    setVideoStatus("Loading video...");
+    setShowVideoPrimer(false);
+    video.load();
+
+    try {
+      await video.play();
+      video.pause();
+      setCurrentVideoTime(video.currentTime || 0);
+      setVideoStatus("Ready");
+    } catch {
+      setShowVideoPrimer(true);
+      setVideoStatus("Tap the video play control, or open the source MP4 below.");
+    }
+  }, []);
+
   const deleteLastChunk = useCallback(() => {
     setChunksByVideo((previous) => {
       const chunks = previous[selectedVideo.id] || [];
@@ -528,21 +551,41 @@ function App() {
       stopRecording();
       setVideoStatus("Video ended");
     };
-    const handleWaiting = () => setVideoStatus("Loading video...");
+    const handleLoadStart = () => setVideoStatus("Loading video...");
+    const handleLoadedMetadata = () => {
+      setVideoStatus("Ready");
+      setShowVideoPrimer(false);
+      setCurrentVideoTime(video.currentTime || 0);
+    };
+    const handleLoadedData = () => {
+      setVideoStatus("Ready");
+      setShowVideoPrimer(false);
+    };
+    const handleWaiting = () => {
+      if (!video.paused) {
+        setVideoStatus("Buffering video...");
+      }
+    };
     const handleCanPlay = () => {
       setVideoStatus("Ready");
+      setShowVideoPrimer(false);
       setVideoError("");
     };
     const handleError = () => {
+      const detail = video.error?.message ? ` ${video.error.message}` : "";
       setVideoStatus("Video error");
+      setShowVideoPrimer(true);
       setVideoError(
-        "Video could not be loaded from Hugging Face. Please check the URL, internet connection, or browser compatibility.",
+        `Video could not be loaded from Hugging Face. Please check the URL, internet connection, or browser compatibility.${detail}`,
       );
       stopRecording();
     };
     const handleTimeUpdate = () => setCurrentVideoTime(video.currentTime || 0);
 
     video.addEventListener("ended", handleEnded);
+    video.addEventListener("loadstart", handleLoadStart);
+    video.addEventListener("loadedmetadata", handleLoadedMetadata);
+    video.addEventListener("loadeddata", handleLoadedData);
     video.addEventListener("waiting", handleWaiting);
     video.addEventListener("canplay", handleCanPlay);
     video.addEventListener("error", handleError);
@@ -550,6 +593,9 @@ function App() {
 
     return () => {
       video.removeEventListener("ended", handleEnded);
+      video.removeEventListener("loadstart", handleLoadStart);
+      video.removeEventListener("loadedmetadata", handleLoadedMetadata);
+      video.removeEventListener("loadeddata", handleLoadedData);
       video.removeEventListener("waiting", handleWaiting);
       video.removeEventListener("canplay", handleCanPlay);
       video.removeEventListener("error", handleError);
@@ -563,9 +609,23 @@ function App() {
     setCurrentVideoTime(0);
     setVideoError("");
     setVideoStatus("Loading video...");
+    setShowVideoPrimer(false);
     setCurrentTranscript("");
     setFormStatus("");
   }, [selectedVideoId, stopRecording]);
+
+  useEffect(() => {
+    if (videoStatus !== "Loading video..." || videoError) {
+      return undefined;
+    }
+
+    const timer = window.setTimeout(() => {
+      setShowVideoPrimer(true);
+      setVideoStatus("Tap Load video if Safari keeps this frame black.");
+    }, 4500);
+
+    return () => window.clearTimeout(timer);
+  }, [selectedVideo.src, videoError, videoStatus]);
 
   useEffect(() => {
     return () => {
@@ -607,13 +667,23 @@ function App() {
           <video
             key={selectedVideo.src}
             ref={videoRef}
-            src={selectedVideo.src}
             playsInline
-            preload="metadata"
+            preload="auto"
             controls
-          />
-          {videoStatus === "Loading video..." && !videoError ? (
-            <div className="video-overlay">Loading video...</div>
+          >
+            <source src={selectedVideo.src} type="video/mp4" />
+          </video>
+          {(videoStatus === "Loading video..." || showVideoPrimer) && !videoError ? (
+            <div className={`video-overlay ${showVideoPrimer ? "" : "is-passive"}`}>
+              <span>
+                {showVideoPrimer ? "Safari may need a tap to load." : "Loading video..."}
+              </span>
+              {showVideoPrimer ? (
+                <button type="button" onClick={primeVideoForSafari}>
+                  Load video
+                </button>
+              ) : null}
+            </div>
           ) : null}
         </div>
         <div className="video-meta">
@@ -624,6 +694,16 @@ function App() {
           <span>{formatTime(currentVideoTime)}</span>
         </div>
         {videoError ? <p className="message error">{videoError}</p> : null}
+        {(showVideoPrimer || videoError) && (
+          <div className="video-fallbacks">
+            <button type="button" onClick={primeVideoForSafari}>
+              Retry video load
+            </button>
+            <a href={selectedVideo.src} target="_blank" rel="noreferrer">
+              Open source MP4
+            </a>
+          </div>
+        )}
       </section>
 
       <section className="status-grid" aria-label="Recording status">

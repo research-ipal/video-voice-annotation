@@ -1,5 +1,5 @@
 const BASE_URL =
-  "https://huggingface.co/datasets/nvidia/PhysicalAI-Robotics-Open-H-Embodiment/resolve/main/cmr-surgical-60hz-fixed/cholecystectomy/videos/chunk-000/observation.images.endoscope";
+  "https://huggingface.co/datasets/nvidia/PhysicalAI-Robotics-Open-H-Embodiment/resolve/main/Surgical/cmr_surgical/cholecystectomy/videos/chunk-000/observation.images.endoscope";
 
 export const videos = Array.from({ length: 10 }, (_, index) => {
   const episodeNumber = String(index).padStart(6, "0");
