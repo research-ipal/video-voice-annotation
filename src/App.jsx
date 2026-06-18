@@ -86,19 +86,55 @@ function getTranscriptPayload(selectedVideo, currentChunks) {
 
 async function resolvePlayableVideoUrl(src) {
   const response = await fetch(src, {
-    method: "GET",
+    method: "HEAD",
     mode: "cors",
-    headers: {
-      Range: "bytes=0-1",
-    },
   });
 
-  if (!response.ok && response.status !== 206) {
+  if (!response.ok) {
     throw new Error(`Video resolver returned ${response.status}`);
   }
 
-  await response.arrayBuffer();
   return response.url || src;
+}
+
+async function fetchVideoAsBlobUrl(src, onProgress) {
+  const response = await fetch(src, {
+    method: "GET",
+    mode: "cors",
+  });
+
+  if (!response.ok) {
+    throw new Error(`Video download returned ${response.status}`);
+  }
+
+  const contentLength = Number(response.headers.get("content-length"));
+  if (!response.body?.getReader) {
+    const blob = await response.blob();
+    onProgress?.(100);
+    return URL.createObjectURL(blob);
+  }
+
+  const reader = response.body.getReader();
+  const chunks = [];
+  let receivedBytes = 0;
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) {
+      break;
+    }
+
+    chunks.push(value);
+    receivedBytes += value.length;
+
+    if (contentLength > 0) {
+      onProgress?.(Math.min(99, Math.round((receivedBytes / contentLength) * 100)));
+    }
+  }
+
+  const blob = new Blob(chunks, { type: response.headers.get("content-type") || "video/mp4" });
+  onProgress?.(100);
+  return URL.createObjectURL(blob);
 }
 
 function App() {
@@ -113,6 +149,7 @@ function App() {
   const [appError, setAppError] = useState("");
   const [videoError, setVideoError] = useState("");
   const [resolvedVideoSrc, setResolvedVideoSrc] = useState("");
+  const [videoDownloadProgress, setVideoDownloadProgress] = useState(null);
   const [videoStatus, setVideoStatus] = useState("Loading video...");
   const [showVideoPrimer, setShowVideoPrimer] = useState(false);
   const [transcriptStatus, setTranscriptStatus] = useState("Transcript idle");
@@ -134,6 +171,7 @@ function App() {
   const isHoldActiveRef = useRef(false);
   const selectedVideoIdRef = useRef(selectedVideoId);
   const chunksByVideoRef = useRef(chunksByVideo);
+  const blobVideoUrlRef = useRef("");
 
   const selectedVideo = useMemo(
     () => videos.find((video) => video.id === selectedVideoId) || videos[0],
@@ -436,6 +474,13 @@ function App() {
     [stopRecording],
   );
 
+  const revokeBlobVideoUrl = useCallback(() => {
+    if (blobVideoUrlRef.current) {
+      URL.revokeObjectURL(blobVideoUrlRef.current);
+      blobVideoUrlRef.current = "";
+    }
+  }, []);
+
   const primeVideoForSafari = useCallback(async () => {
     const video = videoRef.current;
     if (!video) {
@@ -443,20 +488,23 @@ function App() {
     }
 
     setVideoError("");
-    setVideoStatus("Loading video...");
+    setVideoStatus("Downloading video for Safari...");
+    setVideoDownloadProgress(0);
     setShowVideoPrimer(false);
-    video.load();
 
     try {
-      await video.play();
-      video.pause();
-      setCurrentVideoTime(video.currentTime || 0);
-      setVideoStatus("Ready");
+      const blobUrl = await fetchVideoAsBlobUrl(selectedVideo.src, setVideoDownloadProgress);
+      revokeBlobVideoUrl();
+      blobVideoUrlRef.current = blobUrl;
+      setResolvedVideoSrc(blobUrl);
+      setVideoStatus("Loading local video...");
+      setVideoDownloadProgress(null);
     } catch {
       setShowVideoPrimer(true);
-      setVideoStatus("Tap the video play control, or open the source MP4 below.");
+      setVideoDownloadProgress(null);
+      setVideoStatus("Safari video download failed. Try Open source MP4.");
     }
-  }, []);
+  }, [revokeBlobVideoUrl, selectedVideo.src]);
 
   const deleteLastChunk = useCallback(() => {
     setChunksByVideo((previous) => {
@@ -627,12 +675,14 @@ function App() {
     setCurrentChunkSeconds(0);
     setCurrentVideoTime(0);
     setVideoError("");
+    revokeBlobVideoUrl();
+    setVideoDownloadProgress(null);
     setResolvedVideoSrc("");
     setVideoStatus("Loading video...");
     setShowVideoPrimer(false);
     setCurrentTranscript("");
     setFormStatus("");
-  }, [selectedVideoId, stopRecording]);
+  }, [revokeBlobVideoUrl, selectedVideoId, stopRecording]);
 
   useEffect(() => {
     let cancelled = false;
@@ -644,7 +694,7 @@ function App() {
 
     resolvePlayableVideoUrl(selectedVideo.src)
       .then((url) => {
-        if (cancelled) {
+        if (cancelled || blobVideoUrlRef.current) {
           return;
         }
 
@@ -652,7 +702,7 @@ function App() {
         setVideoStatus("Loading video...");
       })
       .catch(() => {
-        if (cancelled) {
+        if (cancelled || blobVideoUrlRef.current) {
           return;
         }
 
@@ -705,13 +755,14 @@ function App() {
     return () => {
       stopTimer();
       stopSpeechRecognition();
+      revokeBlobVideoUrl();
       document.body.classList.remove("recording-lock");
       streamRef.current?.getTracks().forEach((track) => track.stop());
       Object.values(chunksByVideoRef.current)
         .flat()
         .forEach((chunk) => URL.revokeObjectURL(chunk.url));
     };
-  }, [stopSpeechRecognition, stopTimer]);
+  }, [revokeBlobVideoUrl, stopSpeechRecognition, stopTimer]);
 
   return (
     <main className="app-shell">
@@ -754,11 +805,11 @@ function App() {
             !videoError) ? (
             <div className={`video-overlay ${showVideoPrimer ? "" : "is-passive"}`}>
               <span>
-                {showVideoPrimer ? "Safari may need a tap to load." : "Loading video..."}
+                {showVideoPrimer ? "Safari may need a local copy." : "Loading video..."}
               </span>
               {showVideoPrimer ? (
                 <button type="button" onClick={primeVideoForSafari}>
-                  Load video
+                  Load video locally
                 </button>
               ) : null}
             </div>
@@ -767,7 +818,10 @@ function App() {
         <div className="video-meta">
           <div>
             <h2>{selectedVideo.label}</h2>
-            <p>{videoStatus}</p>
+            <p>
+              {videoStatus}
+              {videoDownloadProgress !== null ? ` ${videoDownloadProgress}%` : ""}
+            </p>
           </div>
           <span>{formatTime(currentVideoTime)}</span>
         </div>
@@ -775,7 +829,7 @@ function App() {
         {(showVideoPrimer || videoError) && (
           <div className="video-fallbacks">
             <button type="button" onClick={primeVideoForSafari}>
-              Retry video load
+              Load local Safari copy
             </button>
             <a href={selectedVideo.src} target="_blank" rel="noreferrer">
               Open source MP4
