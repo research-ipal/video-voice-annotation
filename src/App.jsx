@@ -615,6 +615,22 @@ function App() {
   }, [selectedVideoId, stopRecording]);
 
   useEffect(() => {
+    const video = videoRef.current;
+    if (!video) {
+      return undefined;
+    }
+
+    video.load();
+    const timer = window.setTimeout(() => {
+      if (video.readyState === 0 && !video.error) {
+        video.load();
+      }
+    }, 1000);
+
+    return () => window.clearTimeout(timer);
+  }, [selectedVideo.src]);
+
+  useEffect(() => {
     if (videoStatus !== "Loading video..." || videoError) {
       return undefined;
     }
@@ -667,6 +683,7 @@ function App() {
           <video
             key={selectedVideo.src}
             ref={videoRef}
+            crossOrigin="anonymous"
             playsInline
             preload="auto"
             controls
