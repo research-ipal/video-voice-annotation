@@ -84,6 +84,23 @@ function getTranscriptPayload(selectedVideo, currentChunks) {
   };
 }
 
+async function resolvePlayableVideoUrl(src) {
+  const response = await fetch(src, {
+    method: "GET",
+    mode: "cors",
+    headers: {
+      Range: "bytes=0-1",
+    },
+  });
+
+  if (!response.ok && response.status !== 206) {
+    throw new Error(`Video resolver returned ${response.status}`);
+  }
+
+  await response.arrayBuffer();
+  return response.url || src;
+}
+
 function App() {
   const [selectedVideoId, setSelectedVideoId] = useState(videos[0].id);
   const [chunksByVideo, setChunksByVideo] = useState(() =>
@@ -95,6 +112,7 @@ function App() {
   const [micStatus, setMicStatus] = useState("Microphone idle");
   const [appError, setAppError] = useState("");
   const [videoError, setVideoError] = useState("");
+  const [resolvedVideoSrc, setResolvedVideoSrc] = useState("");
   const [videoStatus, setVideoStatus] = useState("Loading video...");
   const [showVideoPrimer, setShowVideoPrimer] = useState(false);
   const [transcriptStatus, setTranscriptStatus] = useState("Transcript idle");
@@ -121,6 +139,7 @@ function App() {
     () => videos.find((video) => video.id === selectedVideoId) || videos[0],
     [selectedVideoId],
   );
+  const playerVideoSrc = resolvedVideoSrc || selectedVideo.src;
   const currentChunks = chunksByVideo[selectedVideo.id] || [];
   const mediaRecorderSupported =
     typeof window !== "undefined" && Boolean(window.MediaRecorder);
@@ -601,18 +620,54 @@ function App() {
       video.removeEventListener("error", handleError);
       video.removeEventListener("timeupdate", handleTimeUpdate);
     };
-  }, [selectedVideo.src, stopRecording]);
+  }, [playerVideoSrc, stopRecording]);
 
   useEffect(() => {
     stopRecording();
     setCurrentChunkSeconds(0);
     setCurrentVideoTime(0);
     setVideoError("");
+    setResolvedVideoSrc("");
     setVideoStatus("Loading video...");
     setShowVideoPrimer(false);
     setCurrentTranscript("");
     setFormStatus("");
   }, [selectedVideoId, stopRecording]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    setResolvedVideoSrc("");
+    setVideoStatus("Resolving video source...");
+    setVideoError("");
+    setShowVideoPrimer(false);
+
+    resolvePlayableVideoUrl(selectedVideo.src)
+      .then((url) => {
+        if (cancelled) {
+          return;
+        }
+
+        setResolvedVideoSrc(url);
+        setVideoStatus("Loading video...");
+      })
+      .catch(() => {
+        if (cancelled) {
+          return;
+        }
+
+        setResolvedVideoSrc("");
+        setVideoStatus("Loading video...");
+        setShowVideoPrimer(true);
+        setVideoError(
+          "The Hugging Face video source could not be resolved for embedded playback. Try Open source MP4, or mirror these videos to a static CDN.",
+        );
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedVideo.src]);
 
   useEffect(() => {
     const video = videoRef.current;
@@ -628,10 +683,13 @@ function App() {
     }, 1000);
 
     return () => window.clearTimeout(timer);
-  }, [selectedVideo.src]);
+  }, [playerVideoSrc]);
 
   useEffect(() => {
-    if (videoStatus !== "Loading video..." || videoError) {
+    if (
+      (videoStatus !== "Loading video..." && videoStatus !== "Resolving video source...") ||
+      videoError
+    ) {
       return undefined;
     }
 
@@ -641,7 +699,7 @@ function App() {
     }, 4500);
 
     return () => window.clearTimeout(timer);
-  }, [selectedVideo.src, videoError, videoStatus]);
+  }, [playerVideoSrc, videoError, videoStatus]);
 
   useEffect(() => {
     return () => {
@@ -681,16 +739,19 @@ function App() {
       <section className="video-section" aria-label="Video player">
         <div className="video-frame">
           <video
-            key={selectedVideo.src}
+            key={playerVideoSrc}
             ref={videoRef}
             crossOrigin="anonymous"
             playsInline
             preload="auto"
             controls
           >
-            <source src={selectedVideo.src} type="video/mp4" />
+            <source src={playerVideoSrc} type="video/mp4" />
           </video>
-          {(videoStatus === "Loading video..." || showVideoPrimer) && !videoError ? (
+          {((videoStatus === "Loading video..." ||
+            videoStatus === "Resolving video source..." ||
+            showVideoPrimer) &&
+            !videoError) ? (
             <div className={`video-overlay ${showVideoPrimer ? "" : "is-passive"}`}>
               <span>
                 {showVideoPrimer ? "Safari may need a tap to load." : "Loading video..."}
