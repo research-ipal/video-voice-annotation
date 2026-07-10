@@ -155,6 +155,7 @@ function App() {
   const [transcriptStatus, setTranscriptStatus] = useState("Transcript idle");
   const [currentTranscript, setCurrentTranscript] = useState("");
   const [formStatus, setFormStatus] = useState("");
+  const [formStatusType, setFormStatusType] = useState("success");
   const [isSubmittingTranscript, setIsSubmittingTranscript] = useState(false);
 
   const videoRef = useRef(null);
@@ -559,19 +560,9 @@ function App() {
 
     const payload = getTranscriptPayload(selectedVideo, currentChunks);
     const payloadJson = JSON.stringify(payload, null, 2);
-    const formData = new FormData();
-    formData.append("_subject", `${selectedVideo.label} transcript JSON`);
-    formData.append("video_id", selectedVideo.id);
-    formData.append("video_label", selectedVideo.label);
-    formData.append("chunk_count", String(currentChunks.length));
-    formData.append("payload_json", payloadJson);
-    formData.append(
-      "transcript_json",
-      new Blob([payloadJson], { type: "application/json" }),
-      `${selectedVideo.id}_transcript.json`,
-    );
 
     setIsSubmittingTranscript(true);
+    setFormStatusType("success");
     setFormStatus("Sending transcript JSON...");
 
     try {
@@ -579,17 +570,34 @@ function App() {
         method: "POST",
         headers: {
           Accept: "application/json",
+          "Content-Type": "application/json",
         },
-        body: formData,
+        body: JSON.stringify({
+          _subject: `${selectedVideo.label} transcript JSON`,
+          source: "video-voice-annotation",
+          video_id: selectedVideo.id,
+          video_label: selectedVideo.label,
+          chunk_count: currentChunks.length,
+          payload_json: payloadJson,
+          transcript_json: payload,
+        }),
       });
 
+      const result = await response.json().catch(() => null);
+
       if (!response.ok) {
-        throw new Error(`Formspree responded with ${response.status}`);
+        const message =
+          result?.error ||
+          result?.errors?.[0]?.message ||
+          `Formspree responded with ${response.status}`;
+        throw new Error(message);
       }
 
+      setFormStatusType("success");
       setFormStatus("Transcript JSON sent to Formspree");
-    } catch {
-      setFormStatus("Transcript JSON could not be sent to Formspree");
+    } catch (error) {
+      setFormStatusType("error");
+      setFormStatus(`Transcript JSON could not be sent: ${error.message}`);
     } finally {
       setIsSubmittingTranscript(false);
     }
@@ -682,6 +690,7 @@ function App() {
     setShowVideoPrimer(false);
     setCurrentTranscript("");
     setFormStatus("");
+    setFormStatusType("success");
   }, [revokeBlobVideoUrl, selectedVideoId, stopRecording]);
 
   useEffect(() => {
@@ -928,7 +937,7 @@ function App() {
           Clear all chunks
         </button>
       </section>
-      {formStatus ? <p className="message success">{formStatus}</p> : null}
+      {formStatus ? <p className={`message ${formStatusType}`}>{formStatus}</p> : null}
 
       <div className="record-dock">
         <button
